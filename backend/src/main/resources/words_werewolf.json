@@ -1,0 +1,12 @@
+[
+  { "civilian": "苹果", "spy": "梨" },
+  { "civilian": "篮球", "spy": "排球" },
+  { "civilian": "警察", "spy": "保安" },
+  { "civilian": "摩托车", "spy": "电动车" },
+  { "civilian": "钢琴", "spy": "电子琴" },
+  { "civilian": "猫", "spy": "狗" },
+  { "civilian": "蛋糕", "spy": "饼干" },
+  { "civilian": "太阳", "spy": "月亮" },
+  { "civilian": "飞机", "spy": "直升机" },
+  { "civilian": "医生", "spy": "护士" }
+]

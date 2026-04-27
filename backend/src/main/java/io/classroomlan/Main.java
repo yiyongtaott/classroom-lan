@@ -8,14 +8,17 @@ import java.net.URI;
 import java.util.logging.*;
 
 /**
- * ClassroomLAN 主入口
- * 启动 UDP + HTTP + WS
+ * ClassroomLAN 主入口 — 启动 UDP 选举 + HTTP + WS
+ *
+ * 架构:
+ *   所有节点运行相同代码 → 选举产生 Leader
+ *   Leader: 启动 HTTP(8080) + WS(8081) → 广播 LEADER_HERE
+ *   Follower: 收到 LEADER_HERE → 浏览器打开 leaderIp:port
  */
 public class Main {
     private static final Logger LOGGER = Logger.getLogger(Main.class.getName());
 
     public static void main(String[] args) {
-        // 配置日志
         LogManager.getLogManager().reset();
         ConsoleHandler handler = new ConsoleHandler();
         handler.setLevel(Level.INFO);
@@ -29,37 +32,45 @@ public class Main {
         WsServer wsServer = null;
 
         try {
-            // 启动 UDP 发现
+            // 1. 启动 UDP 选举
             udpDiscovery = new UdpDiscovery(state);
             udpDiscovery.start();
 
-            // 等待角色确定
+            // 2. 等待选举完成（2秒）
             Thread.sleep(2000);
 
             if (state.isLeader()) {
-                // Leader 启动 HTTP 和 WS 服务器
+                // 3. Leader 启动 HTTP 服务
                 httpServer = new HttpServer(state);
                 httpServer.start();
+                int httpPort = httpServer.getActualPort();
+                state.setHttpPort(httpPort);
 
+                // 4. Leader 启动 WS 服务
                 wsServer = new WsServer(state);
                 wsServer.start();
+                int wsPort = wsServer.getActualPort();
+                state.setWsPort(wsPort);
 
-                // 自动打开浏览器
-                openBrowser("http://localhost:8080");
+                // 5. 通知 UdpDiscovery 端口已就绪 → 触发首次 LEADER_HERE 广播 + 心跳
+                udpDiscovery.setLeaderPorts(httpPort, wsPort);
 
-                LOGGER.info("I am the Leader!");
+                LOGGER.info("I am LEADER — HTTP:" + httpPort + " WS:" + wsPort);
+
+                // 6. 自动打开浏览器（本地访问）
+                openBrowser("http://localhost:" + httpPort);
+
             } else if (state.isFollower()) {
-                // Follower 打开 Leader 的网页
-                String url = "http://" + state.getLeaderIp() + ":8080";
+                // Follower 直接打开浏览器访问 Leader
+                String url = "http://" + state.getLeaderIp() + ":" + state.getLeaderPort();
+                LOGGER.info("Following leader at " + url);
                 openBrowser(url);
-                LOGGER.info("Connected to Leader: " + state.getLeaderIp());
             } else {
-                LOGGER.warning("Role not determined yet");
+                LOGGER.warning("Role undetermined — unexpected state");
             }
 
-            // 添加关闭钩子
-            Thread shutdownHook = new ShutdownHook(udpDiscovery, httpServer, wsServer);
-            Runtime.getRuntime().addShutdownHook(shutdownHook);
+            // 关闭钩子
+            Runtime.getRuntime().addShutdownHook(new ShutdownHook(udpDiscovery, httpServer, wsServer));
 
             // 阻塞主线程
             Thread.currentThread().join();
@@ -73,36 +84,30 @@ public class Main {
         try {
             if (Desktop.isDesktopSupported()) {
                 Desktop.getDesktop().browse(new URI(url));
+            } else {
+                System.out.println("Please open manually: " + url);
             }
         } catch (Exception e) {
             LOGGER.log(Level.WARNING, "Failed to open browser", e);
+            System.out.println("Please open manually: " + url);
         }
     }
 
-    // 关闭钩子类
     static class ShutdownHook extends Thread {
-        private final UdpDiscovery udpDiscovery;
-        private final HttpServer httpServer;
-        private final WsServer wsServer;
+        private final UdpDiscovery udp;
+        private final HttpServer http;
+        private final WsServer ws;
 
         ShutdownHook(UdpDiscovery udp, HttpServer http, WsServer ws) {
-            this.udpDiscovery = udp;
-            this.httpServer = http;
-            this.wsServer = ws;
+            this.udp = udp; this.http = http; this.ws = ws;
         }
 
         @Override
         public void run() {
             LOGGER.info("Shutting down...");
-            if (udpDiscovery != null) {
-                try { udpDiscovery.close(); } catch (Exception e) { LOGGER.log(Level.WARNING, "Error closing UDP", e); }
-            }
-            if (httpServer != null) {
-                httpServer.stop();
-            }
-            if (wsServer != null) {
-                wsServer.stop();
-            }
+            try { if (udp != null) udp.close(); } catch (Exception ignored) {}
+            if (http != null) http.stop();
+            if (ws  != null) ws.stop();
         }
     }
 }

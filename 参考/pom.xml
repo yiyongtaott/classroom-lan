@@ -17,6 +17,7 @@
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <jUnit.version>5.10.0</jUnit.version>
+        <!-- Tyrus 2.x = Jakarta WebSocket 2.1, 支持 Java 17 -->
         <tyrus.version>2.2.2</tyrus.version>
     </properties>
 
@@ -36,18 +37,11 @@
             <version>${tyrus.version}</version>
         </dependency>
 
-        <!-- Tyrus 内嵌 Grizzly 容器 -->
+        <!-- Tyrus 内嵌 Grizzly 容器（在独立进程里跑 WS，无需 Tomcat/Jetty） -->
         <dependency>
             <groupId>org.glassfish.tyrus</groupId>
             <artifactId>tyrus-container-grizzly-server</artifactId>
             <version>${tyrus.version}</version>
-        </dependency>
-
-        <!-- Jackson JSON (for structured game payload parsing) -->
-        <dependency>
-            <groupId>com.fasterxml.jackson.core</groupId>
-            <artifactId>jackson-databind</artifactId>
-            <version>2.15.2</version>
         </dependency>
 
         <!-- ========== 测试 ========== -->
@@ -73,7 +67,7 @@
                 </configuration>
             </plugin>
 
-            <!-- Fat JAR: shade 打包所有依赖 + ServiceLoader 合并 -->
+            <!-- Fat JAR：把 Tyrus + Grizzly 都打进去 -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
@@ -85,6 +79,7 @@
                         <configuration>
                             <createDependencyReducedPom>false</createDependencyReducedPom>
                             <filters>
+                                <!-- 去掉签名文件，否则 fat JAR 启动时报 SecurityException -->
                                 <filter>
                                     <artifact>*:*</artifact>
                                     <excludes>
@@ -98,6 +93,7 @@
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                                     <mainClass>io.classroomlan.Main</mainClass>
                                 </transformer>
+                                <!-- 合并 ServiceLoader SPI 文件（Tyrus/Grizzly 都用 SPI） -->
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
                             </transformers>
                         </configuration>

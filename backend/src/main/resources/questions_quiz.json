@@ -1,0 +1,54 @@
+{
+  "questions": [
+    {
+      "q": "Java 中用于定义常量的关键字是？",
+      "options": ["final", "static", "const", "readonly"],
+      "answer": 0
+    },
+    {
+      "q": "HTML 是以下哪项的缩写？",
+      "options": ["Hyper Text Markup Language", "High Tech Modern Language", "Hyper Transfer Markup Language", "Home Tool Markup Language"],
+      "answer": 0
+    },
+    {
+      "q": "地球在太阳系中是第几大行星？",
+      "options": ["第三大", "第四大", "第五大", "第六大"],
+      "answer": 2
+    },
+    {
+      "q": "水的化学式是什么？",
+      "options": ["CO2", "H2O", "O2", "H2O2"],
+      "answer": 1
+    },
+    {
+      "q": "《红楼梦》的作者是谁？",
+      "options": ["施耐庵", "罗贯中", "曹雪芹", "吴承恩"],
+      "answer": 2
+    },
+    {
+      "q": "光年是什么的单位？",
+      "options": ["时间", "速度", "距离", "亮度"],
+      "answer": 2
+    },
+    {
+      "q": "1GB 等于多少 MB？",
+      "options": ["100", "1024", "512", "2048"],
+      "answer": 1
+    },
+    {
+      "q": "声音不能在哪种介质中传播？",
+      "options": ["固体", "液体", "气体", "真空"],
+      "answer": 3
+    },
+    {
+      "q": "电话是谁发明的？",
+      "options": ["爱迪生", "贝尔", "特斯拉", "爱因斯坦"],
+      "answer": 1
+    },
+    {
+      "q": "中国的首都是哪里？",
+      "options": ["上海", "北京", "广州", "深圳"],
+      "answer": 1
+    }
+  ]
+}
