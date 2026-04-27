@@ -1,0 +1,436 @@
+# ClassroomLAN — AI Development Context
+# This file is the single source of truth for AI assistants working on this codebase.
+# Keep this file updated as decisions change.
+
+================================================================================
+PROJECT IDENTITY
+================================================================================
+
+Name:        ClassroomLAN
+Description: LAN-only file transfer + multiplayer game platform for students
+             whose phones have been confiscated. No internet required.
+Target OS:   Windows 11 only
+Delivery:    Single .exe (jpackage, JRE bundled, double-click to run)
+License:     MIT
+Goal:        1k GitHub Stars
+
+================================================================================
+TECH STACK — STRICT
+================================================================================
+
+Backend:  Pure Java 17 (NO frameworks — not Spring Boot, not Javalin, nothing)
+          Use only JDK standard library:
+            - com.sun.net.httpserver.HttpServer  → HTTP server
+            - java.net.DatagramSocket            → UDP broadcast
+            - java.net.http.WebSocket            → WebSocket server (JSR-356 via Tyrus if needed)
+            - java.awt.Desktop                   → open browser
+            - java.util.concurrent.*             → threading
+
+Frontend: Vue 3 + Vite
+          - Vue Router (hash mode, because served as static files)
+          - Pinia (state management)
+          - NO UI component library — custom CSS only
+          - Communicates with backend via: fetch() for HTTP, native WebSocket API
+
+Build:    Maven (backend) + npm (frontend)
+Package:  jpackage → ClassroomLAN-win-x64.exe (~50MB target)
+
+DO NOT suggest or add:
+  - Spring Boot / Spring anything
+  - Javalin, Micronaut, Quarkus, Vert.x
+  - React, Angular, Svelte
+  - Flutter, Electron
+  - Python (any role)
+  - Docker
+  - Any database (SQLite, H2, etc.) — use in-memory state only
+  - Redis, MQ, any external service
+
+================================================================================
+ARCHITECTURE
+================================================================================
+
+TOPOLOGY:
+  Every node runs the same .exe.
+  One node becomes Leader (runs HTTP + WS server).
+  All others are Followers (browser-only clients).
+  Leader is the single source of truth for game state and file storage.
+
+NODE ROLES (enum NodeRole):
+  CANDIDATE  → just started, running election
+  LEADER     → running HTTP :8080 + WS :8081, serving frontend
+  FOLLOWER   → browser connected to Leader's IP
+
+NODE STATE (singleton NodeState):
+  - NodeRole currentRole
+  - String leaderIp        (null if self is Leader)
+  - int leaderPort         (default 8080)
+  - String selfIp
+  - String nodeId          (random UUID, generated once at startup)
+  - List<String> peerIds   (known online peers)
+
+ELECTION PROTOCOL (UDP, port 9999):
+  Message format: plain JSON, UTF-8
+
+  DISCOVER:    {"type":"DISCOVER","nodeId":"<uuid>"}
+               Sent as UDP broadcast to 255.255.255.255:9999 on startup.
+
+  LEADER_HERE: {"type":"LEADER_HERE","leaderIp":"x.x.x.x","port":8080}
+               Leader unicasts this back to the sender of DISCOVER.
+
+  HEARTBEAT:   {"type":"HEARTBEAT","leaderIp":"x.x.x.x"}
+               Leader broadcasts this every 3 seconds.
+
+  LEADER_DOWN: {"type":"LEADER_DOWN"}
+               Leader broadcasts this in JVM shutdown hook before exit.
+
+ELECTION FLOW:
+  1. Broadcast DISCOVER
+  2. Wait 500ms
+  3. If LEADER_HERE received → become FOLLOWER, open browser to leaderIp:8080
+  4. If no reply → random sleep 0~300ms → listen 200ms more
+  5. If still no reply → become LEADER
+  6. If LEADER_HERE arrives during step 4 → become FOLLOWER anyway
+
+CONFLICT (two nodes start simultaneously):
+  Random backoff in step 4 statistically prevents dual-leader.
+  If dual-leader occurs: first to broadcast LEADER_HERE wins.
+  Second node receives it during its own broadcast window and yields.
+
+LEADER FAILOVER:
+  Followers detect Leader death when:
+    - HEARTBEAT absent for 10 seconds (3 missed + grace period)
+    - or LEADER_DOWN received
+  Action: all Followers re-enter CANDIDATE state and run election again.
+
+PORTS:
+  UDP 9999  → node discovery
+  TCP 8080  → HTTP (frontend + file API)
+  TCP 8081  → WebSocket (game state)
+
+================================================================================
+HTTP SERVER — ROUTES
+================================================================================
+
+All routes handled by com.sun.net.httpserver.HttpServer.
+Static files served from ClassLoader resources at /static/* (Vue build output).
+
+GET  /                    → serve /static/index.html
+GET  /assets/*            → serve /static/assets/*
+GET  /api/status          → {"role":"LEADER","selfIp":"x.x.x.x","peers":3}
+GET  /api/peers           → [{"nodeId":"...","ip":"...","name":"..."}]
+POST /api/upload          → multipart/form-data, saves to in-memory + temp file
+GET  /api/files           → [{"id":"...","name":"...","size":1234,"uploadedBy":"..."}]
+GET  /api/download/{id}   → stream file bytes, Content-Disposition: attachment
+
+File storage: Java temp directory (System.getProperty("java.io.tmpdir")/classroomlan/)
+Files are NOT persisted across Leader restarts.
+
+================================================================================
+WEBSOCKET SERVER — PROTOCOL
+================================================================================
+
+Endpoint: ws://[leaderIp]:8081/game
+All messages: JSON, UTF-8
+
+CLIENT → SERVER:
+  Join room:
+    {"action":"JOIN_ROOM","roomId":"<id>","playerName":"<name>"}
+  Leave room:
+    {"action":"LEAVE_ROOM","roomId":"<id>"}
+  Game action (generic):
+    {"action":"GAME_ACTION","roomId":"<id>","payload":{...}}
+
+SERVER → CLIENT (broadcast to room):
+  Room updated:
+    {"event":"ROOM_STATE","roomId":"<id>","players":[...],"gameType":"draw"}
+  Game state:
+    {"event":"GAME_STATE","roomId":"<id>","data":{...}}
+  Player joined/left:
+    {"event":"PLAYER_JOINED","playerName":"<name>"}
+    {"event":"PLAYER_LEFT","playerName":"<name>"}
+  Error:
+    {"event":"ERROR","message":"<reason>"}
+
+Room model:
+  - String roomId
+  - GameType type (DRAW_GUESS, QUIZ, WEREWOLF)
+  - List<Player> players
+  - GameState state (WAITING, PLAYING, FINISHED)
+  - Object gameData (game-specific, cast per GameType)
+
+================================================================================
+FRONTEND STRUCTURE
+================================================================================
+
+frontend/src/
+  main.js              → createApp, router, pinia
+  router/index.js      → hash mode routes (see below)
+  stores/
+    node.js            → currentRole, leaderIp, selfIp, peers
+    game.js            → currentRoom, gameState, wsConnection
+  views/
+    Home.vue           → status display, quick-access cards
+    FileTransfer.vue   → upload/download UI
+    GameLobby.vue      → list rooms, create room
+    games/
+      DrawGuess.vue    → canvas drawing + chat
+      Quiz.vue         → question display + answer buttons
+      Werewolf.vue     → role reveal + voting UI
+  composables/
+    useWebSocket.js    → connect(), send(), onMessage(), auto-reconnect
+    useFileTransfer.js → upload with progress, download, list files
+
+ROUTES (hash mode):
+  /#/               → Home
+  /#/transfer       → FileTransfer
+  /#/games          → GameLobby
+  /#/games/draw     → DrawGuess
+  /#/games/quiz     → Quiz
+  /#/games/werewolf → Werewolf
+
+NODE DETECTION ON FRONTEND:
+  On app mount, call GET /api/status.
+  If role === "FOLLOWER" (shouldn't happen since only Leader serves pages),
+  this is a future-proofing check.
+  Store leaderIp and peers in node store.
+  Show "Waiting for classmates..." banner if peers.length === 0.
+
+================================================================================
+GAME SPECIFICATIONS
+================================================================================
+
+--- DRAW GUESS (你画我猜) ---
+  Players: 3~8
+  Flow:
+    1. One player is "Drawer" (rotate each round)
+    2. Drawer picks a word from 3 options (server sends options, only to Drawer)
+    3. Drawer draws on Canvas; strokes sent via WS as:
+       {"action":"GAME_ACTION","payload":{"type":"STROKE","points":[{x,y}...],"color":"#000","width":3}}
+    4. Others type guesses in chat
+    5. Server checks guess against word (case-insensitive, trim)
+    6. Correct guess → guesser + drawer get points, round ends
+    7. Timer: 80 seconds per round
+  Word list: embedded JSON in resources, categories: 动物/食物/日常/成语
+
+--- QUIZ (快问快答) ---
+  Players: 2~20
+  Flow:
+    1. Host selects category and question count
+    2. Server sends question to all (show question + 4 options)
+    3. Players tap answer; first correct answer gets full points (10)
+    4. Later correct answers get partial points (5)
+    5. Wrong answer: -2 points (optional, configurable)
+    6. Timer: 15 seconds per question
+  Question format: {"q":"...","options":["A","B","C","D"],"answer":1}
+
+--- WEREWOLF / 谁是卧底 ---
+  Players: 4~12
+  Roles: CIVILIAN (平民), SPY (卧底), BLANK (白板, optional)
+  Flow:
+    1. Server assigns roles, sends each player their role + word privately
+       Civilians get word A, Spy gets similar word B
+    2. Each player describes their word (text input, 30s timer)
+    3. Voting round: players vote to eliminate (radio buttons)
+    4. Player with most votes is eliminated; revealed their role
+    5. Win condition:
+       - Civilians win: spy eliminated
+       - Spy wins: spy survives until 2 civilians remain
+  Word pairs embedded in resources: e.g. 苹果/梨, 篮球/排球
+
+================================================================================
+PROJECT DIRECTORY LAYOUT
+================================================================================
+
+ClassroomLAN/
+├── backend/
+│   ├── pom.xml
+│   └── src/main/
+│       ├── java/io/classroomlan/
+│       │   ├── Main.java
+│       │   ├── node/
+│       │   │   ├── NodeRole.java      (enum: CANDIDATE, LEADER, FOLLOWER)
+│       │   │   ├── NodeState.java     (singleton)
+│       │   │   └── UdpDiscovery.java  (election logic, heartbeat)
+│       │   ├── server/
+│       │   │   ├── HttpServer.java    (route registration)
+│       │   │   ├── WsServer.java      (WebSocket via Tyrus or raw)
+│       │   │   └── handlers/
+│       │   │       ├── StaticHandler.java
+│       │   │       ├── FileHandler.java
+│       │   │       ├── StatusHandler.java
+│       │   │       └── GameWsHandler.java
+│       │   └── game/
+│       │       ├── Room.java
+│       │       ├── GameType.java      (enum)
+│       │       ├── Player.java
+│       │       ├── DrawGuessGame.java
+│       │       ├── QuizGame.java
+│       │       └── WerewolfGame.java
+│       └── resources/
+│           ├── static/                (Vue build output, gitignored, copied at build time)
+│           ├── words_draw.json        (你画我猜词库)
+│           ├── questions_quiz.json    (快问快答题库)
+│           └── words_werewolf.json    (谁是卧底词对)
+│
+├── frontend/
+│   ├── package.json
+│   ├── vite.config.js
+│   └── src/  (see FRONTEND STRUCTURE above)
+│
+├── build/
+│   ├── build-all.ps1     (Windows one-click build)
+│   └── jpackage.cfg      (jpackage args)
+│
+├── CONTEXT.txt           (this file)
+└── README.md
+
+================================================================================
+BUILD & PACKAGE
+================================================================================
+
+STEP 1 — Frontend:
+  cd frontend && npm install && npm run build
+  Output: frontend/dist/
+
+STEP 2 — Copy to backend resources:
+  xcopy /E /Y frontend\dist\* backend\src\main\resources\static\
+
+STEP 3 — Backend JAR:
+  cd backend && mvn package -q -DskipTests
+  Output: backend/target/classroomlan-1.0.0-fat.jar
+
+STEP 4 — jpackage EXE:
+  jpackage \
+    --type exe \
+    --name ClassroomLAN \
+    --app-version 1.0.0 \
+    --input backend/target/ \
+    --main-jar classroomlan-1.0.0-fat.jar \
+    --main-class io.classroomlan.Main \
+    --icon build/icon.ico \
+    --dest releases/
+
+Target EXE size: <50MB (use jlink to trim JRE to only required modules)
+Required JDK modules: java.base, java.net.http, java.desktop, jdk.httpserver
+
+Maven fat JAR: use maven-assembly-plugin or maven-shade-plugin.
+Static files served from ClassLoader, NOT filesystem.
+
+================================================================================
+KEY CONSTRAINTS & INVARIANTS
+================================================================================
+
+1. EXACTLY ONE Leader per LAN at any time.
+   Violating this breaks file storage and game state.
+
+2. Leader serves ALL HTTP and WS traffic.
+   Followers never run a server (except during re-election).
+
+3. No persistent storage.
+   All state is in-memory. Files go to OS temp dir and are cleaned on exit.
+
+4. Frontend is always served by Leader.
+   Vue Router uses hash mode so sub-routes work without server-side routing.
+
+5. UDP 9999 must be open on Windows Firewall.
+   First run triggers Windows Firewall dialog. README must warn users.
+
+6. nodeId is generated fresh every run (UUID.randomUUID()).
+   There is no user account system. playerName is entered in the UI per session.
+
+7. Java 17 minimum. No preview features.
+
+8. No external JAR dependencies if avoidable.
+   Exception: Tyrus (JSR-356 WebSocket) is allowed if raw WS implementation
+   is too complex. Prefer to keep dep count at 0.
+
+================================================================================
+BROWSER AUTO-OPEN
+================================================================================
+
+Leader after election win:
+  Desktop.getDesktop().browse(new URI("http://localhost:8080"));
+
+Follower after receiving LEADER_HERE:
+  Desktop.getDesktop().browse(new URI("http://" + leaderIp + ":" + leaderPort));
+
+Guard with Desktop.isDesktopSupported() check.
+Fall back to printing URL to stdout if Desktop not supported.
+
+================================================================================
+ERROR CASES TO HANDLE
+================================================================================
+
+- UDP port 9999 already in use → log warning, skip discovery, assume solo Leader
+- HTTP port 8080 in use → try 8090, 8091... up to 5 attempts, update LEADER_HERE port
+- WS port 8081 in use → same retry logic
+- Leader IP unreachable after becoming Follower → re-run election
+- File upload too large → reject with 413, max size configurable (default 500MB)
+- Two Leaders detected (split-brain) → lower nodeId (lexicographic) yields
+
+================================================================================
+WINDOWS FIREWALL
+================================================================================
+
+First run: Windows will show firewall allow/deny dialog for UDP and TCP.
+User must click "Allow".
+
+Optional: provide a PowerShell script to pre-configure rules:
+  New-NetFirewallRule -DisplayName "ClassroomLAN UDP" -Direction Inbound \
+    -Protocol UDP -LocalPort 9999 -Action Allow
+  New-NetFirewallRule -DisplayName "ClassroomLAN HTTP" -Direction Inbound \
+    -Protocol TCP -LocalPort 8080 -Action Allow
+  New-NetFirewallRule -DisplayName "ClassroomLAN WS" -Direction Inbound \
+    -Protocol TCP -LocalPort 8081 -Action Allow
+
+================================================================================
+DEVELOPMENT PHASES
+================================================================================
+
+Phase 1 (core skeleton):
+  - UdpDiscovery.java: election + heartbeat
+  - HttpServer.java: static file serving
+  - Main.java: wire everything, browser auto-open
+  - Home.vue: show node role and peer count
+  Milestone: Two machines, one becomes Leader, other auto-opens browser.
+
+Phase 2 (file transfer):
+  - FileHandler.java: upload/download/list
+  - FileTransfer.vue: drag-drop upload, file list, download button
+  - QR code display of Leader IP (use ZXing or JS qrcode lib in frontend)
+  Milestone: One machine shares a file, another downloads it via browser.
+
+Phase 3 (game foundation):
+  - WsServer.java + GameWsHandler.java
+  - Room.java, Player.java, GameType.java
+  - GameLobby.vue: create/join room
+  - QuizGame.java + Quiz.vue (simplest game, no real-time drawing)
+  Milestone: Multiple players join a quiz room and play one round.
+
+Phase 4 (remaining games):
+  - DrawGuessGame.java + DrawGuess.vue (Canvas stroke sync)
+  - WerewolfGame.java + Werewolf.vue
+  Milestone: All three games playable end-to-end.
+
+Phase 5 (polish & release):
+  - jpackage EXE build pipeline
+  - README.md (Chinese + English)
+  - GitHub Actions: build EXE on tag push
+  - Firewall setup script
+  Milestone: GitHub Release with downloadable EXE.
+
+================================================================================
+WHAT NOT TO DO (common AI mistakes to avoid)
+================================================================================
+
+DO NOT use Spring annotations (@RestController, @Bean, @Autowired, etc.)
+DO NOT use javax.servlet or jakarta.servlet
+DO NOT suggest adding Maven dependencies without explicit approval
+DO NOT use System.exit() in handlers — use proper shutdown hooks
+DO NOT store files in the JAR's own directory — use System temp dir
+DO NOT use Thread.sleep() on the main thread during election — use scheduled executor
+DO NOT use innerHTML in Vue components — use v-html only for trusted content
+DO NOT use localStorage/sessionStorage — no persistence, keep all state in Pinia
+DO NOT add authentication/login — this is a trust-based LAN app
+DO NOT add a database — everything is in-memory
+DO NOT make frontend poll /api/status every second — use WS push instead
