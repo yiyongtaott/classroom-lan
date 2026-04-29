@@ -6,6 +6,8 @@ import io.classroomlan.server.ws.GameWsEndpoint;
 import io.classroomlan.server.ws.UserWsEndpoint;
 import org.glassfish.tyrus.server.Server;
 
+import java.io.IOException;
+import jakarta.websocket.DeploymentException;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -50,9 +52,9 @@ public class WsServer {
                 server.start();
                 LOGGER.info("WebSocket Server started on port " + tryPort);
                 return;
-            } catch (IOException e) {
-                LOGGER.warning("WS port " + tryPort + " bind failed: " + e.getMessage());
-                lastEx = e;
+            } catch (Exception e) {
+                LOGGER.warning("WS port " + tryPort + " failed: " + e.getMessage());
+                lastEx = new IOException("Failed to start WS server", e);
             }
         }
         throw new IOException("Failed to bind WS server after " + MAX_PORT_ATTEMPTS + " attempts", lastEx);

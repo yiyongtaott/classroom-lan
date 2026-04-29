@@ -2,17 +2,15 @@ package io.classroomlan;
 
 import io.classroomlan.node.*;
 import io.classroomlan.server.*;
-
 import java.awt.Desktop;
 import java.net.URI;
 import java.util.logging.*;
-
 /**
  * ClassroomLAN 主入口 — 启动 UDP 选举 + HTTP + WS
  *
  * 架构:
  *   所有节点运行相同代码 → 选举产生 Leader
- *   Leader: 启动 HTTP(8080) + WS(8081) → 广播 LEADER_HERE
+ *   Leader: 启动 HTTP(8080) + WS(8081) → 广播 LEADER_ HERE
  *   Follower: 收到 LEADER_HERE → 浏览器打开 leaderIp:port
  */
 public class Main {
@@ -28,7 +26,7 @@ public class Main {
 
         NodeState state = NodeState.getInstance();
         UdpDiscovery udpDiscovery = null;
-        HttpServer httpServer = null;
+        HttpServerSelf httpServer = null;
         WsServer wsServer = null;
 
         try {
@@ -41,7 +39,7 @@ public class Main {
 
             if (state.isLeader()) {
                 // 3. Leader 启动 HTTP 服务
-                httpServer = new HttpServer(state);
+                httpServer = new HttpServerSelf(state);
                 httpServer.start();
                 int httpPort = httpServer.getActualPort();
                 state.setHttpPort(httpPort);
@@ -95,10 +93,10 @@ public class Main {
 
     static class ShutdownHook extends Thread {
         private final UdpDiscovery udp;
-        private final HttpServer http;
+        private final HttpServerSelf http;
         private final WsServer ws;
 
-        ShutdownHook(UdpDiscovery udp, HttpServer http, WsServer ws) {
+        ShutdownHook(UdpDiscovery udp, HttpServerSelf http, WsServer ws) {
             this.udp = udp; this.http = http; this.ws = ws;
         }
 

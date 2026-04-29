@@ -62,6 +62,8 @@ public class UdpDiscovery implements Closeable {
             LOGGER.warning("UDP port " + UDP_PORT + " in use - starting in standalone mode (no election)");
             running = true;
             try { socket = new DatagramSocket(); } catch (SocketException ignored) {}
+            // 即使独立模式也需创建 scheduler 以支持心跳
+            scheduler = Executors.newSingleThreadScheduledExecutor(r -> new Thread(r, "udp-discovery-solo"));
             becomeLeaderSolo();
         }
     }
@@ -83,7 +85,7 @@ public class UdpDiscovery implements Closeable {
         }
     }
 
-    private boolean isHeartbeatRunning() {
+    boolean isHeartbeatRunning() {
         return heartbeatFuture != null && !heartbeatFuture.isDone();
     }
 

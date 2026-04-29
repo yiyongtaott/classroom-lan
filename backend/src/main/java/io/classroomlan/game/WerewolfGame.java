@@ -26,7 +26,7 @@ import java.io.InputStream;
  * Events:
  *   ROLE_ASSIGNED, PHASE_CHANGED, PLAYER_ELIMINATED, GAME_OVER
  */
-public class WerewolfGame {
+public class WerewolfGame extends GameBase {
     private static final Logger LOGGER = Logger.getLogger(WerewolfGame.class.getName());
     private static final int DESCRIPTION_TIME_SEC = 30;
     private static final int VOTING_TIME_SEC    = 20;
@@ -202,6 +202,13 @@ public class WerewolfGame {
         return null;
     }
 
+    // ── 定时器 tick ────────────────────────────────────────────────────
+
+    /** Called by GameWsEndpoint once per second */
+    public void tick() {
+        // 暂无需要每秒推进的逻辑（阶段倒时可扩展）
+    }
+
     // ── 查询 ─────────────────────────────────────────────────────────────
 
     public Map<String, Object> getGameState(String viewer) {
@@ -284,34 +291,5 @@ public class WerewolfGame {
         WordPair(String c, String s) { this.civilianWord = c; this.spyWord = s; }
     }
 
-    public static class GameActionResult {
-        public enum Type { BROADCAST, PRIVATE, ERROR }
-        public Type type;
-        public String event;
-        public Map<String, Object> data;
-        public String targetPlayer;
-        public String error;
-
-        static GameActionResult broadcast(String event, Map<String, Object> data) {
-            GameActionResult r = new GameActionResult();
-            r.type = Type.BROADCAST;
-            r.event = event;
-            r.data = data;
-            return r;
-        }
-        static GameActionResult privateMsg(String player, String event, Map<String, Object> data) {
-            GameActionResult r = new GameActionResult();
-            r.type = Type.PRIVATE;
-            r.targetPlayer = player;
-            r.event = event;
-            r.data = data;
-            return r;
-        }
-        static GameActionResult error(String msg) {
-            GameActionResult r = new GameActionResult();
-            r.type = Type.ERROR;
-            r.error = msg;
-            return r;
-        }
-    }
+    // 使用 io.classroomlan.game.GameActionResult
 }

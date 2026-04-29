@@ -25,7 +25,7 @@ import java.io.InputStream;
  * - GUESS: {word: "..."} → 验证失败/成功
  * - CLEAR: 清空画布
  */
-public class DrawGuessGame {
+public class DrawGuessGame extends GameBase {
     private static final Logger LOGGER = Logger.getLogger(DrawGuessGame.class.getName());
     private static final int ROUND_TIME_SEC = 80;
     private static final int MAX_HISTORY = 50;
@@ -222,13 +222,20 @@ public class DrawGuessGame {
      */
     public void setCurrentWord(String word) {
         this.currentWord = word;
+        // 自动开始回合，方便测试
+        if (!roundActive) {
+            startRound();
+        }
     }
 
     public void setCurrentDrawer(String name) {
         this.currentDrawer = name;
-        // Auto-start round with word options
+        // 自动从词库选一个词并开始回合
         List<String> options = pickThreeWords();
-        // Server will send options to drawer ONLY
+        if (!options.isEmpty()) {
+            this.currentWord = options.get(0);
+            startRound();
+        }
     }
 
     public void assignDrawerRound() {
@@ -282,35 +289,5 @@ public class DrawGuessGame {
     }
 
     // ── 结果封装 ─────────────────────────────────────────────────────────
-
-    public static class GameActionResult {
-        public enum Type { BROADCAST, PRIVATE, ERROR }
-        public Type type;
-        public String event;
-        public Map<String, Object> data;
-        public String targetPlayer;   // for PRIVATE
-        public String error;
-
-        static GameActionResult broadcast(String event, Map<String, Object> data) {
-            GameActionResult r = new GameActionResult();
-            r.type = Type.BROADCAST;
-            r.event = event;
-            r.data = data;
-            return r;
-        }
-        static GameActionResult privateMsg(String player, String event, Map<String, Object> data) {
-            GameActionResult r = new GameActionResult();
-            r.type = Type.PRIVATE;
-            r.targetPlayer = player;
-            r.event = event;
-            r.data = data;
-            return r;
-        }
-        static GameActionResult error(String msg) {
-            GameActionResult r = new GameActionResult();
-            r.type = Type.ERROR;
-            r.error = msg;
-            return r;
-        }
-    }
+    // 使用 io.classroomlan.game.GameActionResult
 }

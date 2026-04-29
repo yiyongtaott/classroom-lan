@@ -48,11 +48,19 @@ public class QuizGame {
     private boolean questionActive = false;
     private Set<String> answeredThisQuestion = ConcurrentHashMap.newKeySet();
     private boolean firstAnswererLogged = false;
+    private boolean questionTimedOut = false;  // 标记当前问题是否已超时
 
     public QuizGame(GameRoom room) {
         this.room = room;
         this.questionBank = loadQuestionBank();
     }
+
+    // Test-only constructor for injectable question bank
+    public QuizGame(GameRoom room, List<Question> questionBank) {
+        this.room = room;
+        this.questionBank = questionBank;
+    }
+
 
     // ── 游戏控制 ─────────────────────────────────────────────────────
 
@@ -99,6 +107,7 @@ public class QuizGame {
 
         currentQuestion = selectedQuestions.get(currentQuestionIndex);
         questionActive = true;
+        questionTimedOut = false;  // 重置超时标记
         questionStartTime = System.currentTimeMillis();
         answeredThisQuestion.clear();
         firstAnswererLogged = false;
@@ -114,13 +123,8 @@ public class QuizGame {
     }
 
     private GameActionResult handleAnswer(String playerName, int answerIdx) {
+        if (questionTimedOut) return GameActionResult.error("Time's up!");
         if (!questionActive) return GameActionResult.error("No active question");
-
-        long elapsed = (System.currentTimeMillis() - questionStartTime) / 1000;
-        if (elapsed > QUESTION_TIME_SEC) {
-            questionActive = false;
-            return GameActionResult.error("Time's up!");
-        }
 
         if (answeredThisQuestion.contains(playerName)) {
             return GameActionResult.error("Already answered");
@@ -180,6 +184,7 @@ public class QuizGame {
             long elapsed = (System.currentTimeMillis() - questionStartTime) / 1000;
             if (elapsed > QUESTION_TIME_SEC) {
                 questionActive = false;
+                questionTimedOut = true;  // 标记超时，拒绝后续 ANSWER
                 LOGGER.info("Question time out. Moving to next...");
                 // Auto-advance
                 // (handler will call nextQuestion on next tick via server loop)
@@ -242,34 +247,5 @@ public class QuizGame {
         }
     }
 
-    public static class GameActionResult {
-        public enum Type { BROADCAST, PRIVATE, ERROR }
-        public Type type;
-        public String event;
-        public Map<String, Object> data;
-        public String targetPlayer;
-        public String error;
-
-        static GameActionResult broadcast(String event, Map<String, Object> data) {
-            GameActionResult r = new GameActionResult();
-            r.type = Type.BROADCAST;
-            r.event = event;
-            r.data = data;
-            return r;
-        }
-        static GameActionResult privateMsg(String player, String event, Map<String, Object> data) {
-            GameActionResult r = new GameActionResult();
-            r.type = Type.PRIVATE;
-            r.targetPlayer = player;
-            r.event = event;
-            r.data = data;
-            return r;
-        }
-        static GameActionResult error(String msg) {
-            GameActionResult r = new GameActionResult();
-            r.type = Type.ERROR;
-            r.error = msg;
-            return r;
-        }
-    }
+    // GameActionResult 是独立类，见 io.classroomlan.game.GameActionResult
 }

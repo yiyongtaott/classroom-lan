@@ -112,8 +112,16 @@ public class NodeState {
         return httpPort;
     }
 
+    public void setHttpPort(int httpPort) {
+        this.httpPort = httpPort;
+    }
+
     public int getWsPort() {
         return wsPort;
+    }
+
+    public void setWsPort(int wsPort) {
+        this.wsPort = wsPort;
     }
 
     public int getUdpPort() {

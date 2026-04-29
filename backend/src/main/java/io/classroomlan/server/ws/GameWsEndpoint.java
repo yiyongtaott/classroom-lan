@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import io.classroomlan.node.NodeState;
 import io.classroomlan.game.*;
+import io.classroomlan.game.GameActionResult;
 
 import jakarta.websocket.*;
 import jakarta.websocket.server.ServerEndpoint;
@@ -33,8 +34,8 @@ public class GameWsEndpoint {
 
     // 房间元数据
     private static class RoomMeta {
-        String gameType;  // "draw" | "quiz" | "werewolf"
-        GameBase game;    // 游戏逻辑实例
+        String gameType;     // "draw" | "quiz" | "werewolf"
+        GameBase game;       // 游戏逻辑实例
     }
 
     // Session → roomId / playerName
@@ -130,7 +131,7 @@ public class GameWsEndpoint {
         });
 
         // 广播玩家加入
-        broadcastToRoom(roomId, mk("PLAYER_JOINED", Map.of("playerName", playerName)));
+        sendBroadcast(roomId, "PLAYER_JOINED", Map.of("playerName", playerName));
 
         // 发送房间状态
         sendRoomState(session, roomId);
@@ -156,7 +157,7 @@ public class GameWsEndpoint {
         }
 
         if (playerName != null) {
-            broadcastToRoom(actualRoomId, mk("PLAYER_LEFT", Map.of("playerName", playerName)));
+            sendBroadcast(actualRoomId, "PLAYER_LEFT", Map.of("playerName", playerName));
         }
     }
 
@@ -195,7 +196,7 @@ public class GameWsEndpoint {
         }
 
         // Pipeline via game handler
-        GameBase.Result result = meta.game.handleAction(playerName, action, payload);
+        GameActionResult result = meta.game.handleAction(playerName, action, payload);
 
         switch (result.type) {
             case BROADCAST -> {
@@ -221,6 +222,14 @@ public class GameWsEndpoint {
         Set<Session> sessions = roomSessions.get(roomId);
         if (sessions == null) return;
         String json = mk(event, data);
+        for (Session s : sessions) {
+            sendTo(s, json);
+        }
+    }
+
+    private void broadcastToRoom(String roomId, String json) {
+        Set<Session> sessions = roomSessions.get(roomId);
+        if (sessions == null) return;
         for (Session s : sessions) {
             sendTo(s, json);
         }

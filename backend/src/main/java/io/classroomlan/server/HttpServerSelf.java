@@ -3,7 +3,6 @@ package io.classroomlan.server;
 import com.sun.net.httpserver.HttpServer;
 import io.classroomlan.node.NodeState;
 import io.classroomlan.server.handlers.*;
-
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.logging.Logger;
@@ -12,8 +11,8 @@ import java.util.logging.Logger;
  * HTTP 服务器 — 支持端口冲突自动重试
  * 默认端口 8080，如被占用依次尝试 8081-8085
  */
-public class HttpServer {
-    private static final Logger LOGGER = Logger.getLogger(HttpServer.class.getName());
+public class HttpServerSelf {
+    private static final Logger LOGGER = Logger.getLogger(HttpServerSelf.class.getName());
     private static final int HTTP_PORT_DEFAULT = 8080;
     private static final int MAX_PORT_ATTEMPTS = 5;
 
@@ -21,7 +20,7 @@ public class HttpServer {
     private final NodeState nodeState;
     private int actualPort;
 
-    public HttpServer(NodeState nodeState) {
+    public HttpServerSelf(NodeState nodeState) {
         this.nodeState = nodeState;
         this.actualPort = HTTP_PORT_DEFAULT;
     }
