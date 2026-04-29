@@ -2,7 +2,6 @@ package io.classroomlan;
 
 import io.classroomlan.node.*;
 import io.classroomlan.server.*;
-
 import java.awt.Desktop;
 import java.net.URI;
 import java.util.logging.*;
@@ -10,7 +9,6 @@ import java.util.logging.*;
 /**
  * ClassroomLAN 主入口 — 启动 UDP 选举 + HTTP + WS
  *
- * 架构:
  *   所有节点运行相同代码 → 选举产生 Leader
  *   Leader: 启动 HTTP(8080) + WS(8081) → 广播 LEADER_HERE
  *   Follower: 收到 LEADER_HERE → 浏览器打开 leaderIp:port
